@@ -13,9 +13,9 @@ contract EverestOrBustTest is Test {
     MockERC20 dai;
 
     address creator = makeAddr("creator");
-    address alice   = makeAddr("alice");
-    address bob     = makeAddr("bob");
-    address carol   = makeAddr("carol");
+    address contributor   = makeAddr("contributor");
+    address secondContributor     = makeAddr("secondContributor");
+    address nonContributor   = makeAddr("nonContributor");
 
     // Dec 10 2026 00:00:00 UTC
     uint256 constant START    = 1765324800;
@@ -38,15 +38,15 @@ contract EverestOrBustTest is Test {
         vm.warp(START);
 
         // mint tokens to contributors
-        usdc.mint(alice, 1000e6);
-        usdt.mint(alice, 1000e6);
-        dai.mint(alice,  1000e18);
+        usdc.mint(contributor, 1000e6);
+        usdt.mint(contributor, 1000e6);
+        dai.mint(contributor,  1000e18);
 
-        usdc.mint(bob, 1000e6);
-        usdt.mint(bob, 1000e6);
-        dai.mint(bob,  1000e18);
+        usdc.mint(secondContributor, 1000e6);
+        usdt.mint(secondContributor, 1000e6);
+        dai.mint(secondContributor,  1000e18);
 
-        usdc.mint(carol, 1000e6);
+        usdc.mint(nonContributor, 1000e6);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -54,38 +54,38 @@ contract EverestOrBustTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     function test_Contribute_USDC() public {
-        vm.startPrank(alice);
+        vm.startPrank(contributor);
         usdc.approve(address(campaign), 6.9e6);
         campaign.contribute(address(usdc), 6.9e6);
         vm.stopPrank();
 
-        assertEq(campaign.contributedUSDC(alice), 6.9e6);
-        assertEq(campaign.contributedNormalized(alice), 6.9e18);
+        assertEq(campaign.contributedUSDC(contributor), 6.9e6);
+        assertEq(campaign.contributedNormalized(contributor), 6.9e18);
         assertEq(campaign.totalRaisedNormalized(), 6.9e18);
     }
 
     function test_Contribute_USDT() public {
-        vm.startPrank(alice);
+        vm.startPrank(contributor);
         usdt.approve(address(campaign), 6.9e6);
         campaign.contribute(address(usdt), 6.9e6);
         vm.stopPrank();
 
-        assertEq(campaign.contributedUSDT(alice), 6.9e6);
-        assertEq(campaign.contributedNormalized(alice), 6.9e18);
+        assertEq(campaign.contributedUSDT(contributor), 6.9e6);
+        assertEq(campaign.contributedNormalized(contributor), 6.9e18);
     }
 
     function test_Contribute_DAI() public {
-        vm.startPrank(alice);
+        vm.startPrank(contributor);
         dai.approve(address(campaign), 6.9e18);
         campaign.contribute(address(dai), 6.9e18);
         vm.stopPrank();
 
-        assertEq(campaign.contributedDAI(alice), 6.9e18);
-        assertEq(campaign.contributedNormalized(alice), 6.9e18);
+        assertEq(campaign.contributedDAI(contributor), 6.9e18);
+        assertEq(campaign.contributedNormalized(contributor), 6.9e18);
     }
 
     function test_Contribute_MixedTokensUpToCap() public {
-        vm.startPrank(alice);
+        vm.startPrank(contributor);
         usdc.approve(address(campaign), 2.3e6);
         campaign.contribute(address(usdc), 2.3e6);
 
@@ -93,24 +93,24 @@ contract EverestOrBustTest is Test {
         campaign.contribute(address(dai), 4.6e18);
         vm.stopPrank();
 
-        assertEq(campaign.contributedNormalized(alice), 6.9e18);
+        assertEq(campaign.contributedNormalized(contributor), 6.9e18);
     }
 
     function test_Contribute_CapsExcessAutomatically() public {
-        vm.startPrank(alice);
-        // alice tries to contribute $100 but cap is $69
+        vm.startPrank(contributor);
+        // contributor tries to contribute $100 but cap is $69
         usdc.approve(address(campaign), 100e6);
         campaign.contribute(address(usdc), 100e6);
         vm.stopPrank();
 
         // should only pull $69 worth
-        assertEq(campaign.contributedNormalized(alice), 6.9e18);
-        assertEq(campaign.contributedUSDC(alice), 6.9e6);
+        assertEq(campaign.contributedNormalized(contributor), 6.9e18);
+        assertEq(campaign.contributedUSDC(contributor), 6.9e6);
     }
 
     function test_RevertWhen_ContributeBeforeStart() public {
         vm.warp(START - 1);
-        vm.startPrank(alice);
+        vm.startPrank(contributor);
         usdc.approve(address(campaign), 10e6);
         vm.expectRevert(EverestOrBust.CampaignNotStarted.selector);
         campaign.contribute(address(usdc), 10e6);
@@ -119,7 +119,7 @@ contract EverestOrBustTest is Test {
 
     function test_RevertWhen_ContributeAfterDeadline() public {
         vm.warp(DEADLINE + 1);
-        vm.startPrank(alice);
+        vm.startPrank(contributor);
         usdc.approve(address(campaign), 10e6);
         vm.expectRevert(EverestOrBust.CampaignEnded.selector);
         campaign.contribute(address(usdc), 10e6);
@@ -127,7 +127,7 @@ contract EverestOrBustTest is Test {
     }
 
     function test_RevertWhen_ContributeZeroAmount() public {
-        vm.startPrank(alice);
+        vm.startPrank(contributor);
         usdc.approve(address(campaign), 10e6);
         vm.expectRevert(EverestOrBust.ZeroAmount.selector);
         campaign.contribute(address(usdc), 0);
@@ -135,7 +135,7 @@ contract EverestOrBustTest is Test {
     }
 
     function test_RevertWhen_CapAlreadyExhausted() public {
-        vm.startPrank(alice);
+        vm.startPrank(contributor);
         usdc.approve(address(campaign), type(uint256).max);
         campaign.contribute(address(usdc), 6.9e6);
         vm.expectRevert(EverestOrBust.CapExceeded.selector);
@@ -145,8 +145,8 @@ contract EverestOrBustTest is Test {
 
     function test_RevertWhen_UnsupportedToken() public {
         MockERC20 random = new MockERC20();
-        random.mint(alice, 100e18);
-        vm.startPrank(alice);
+        random.mint(contributor, 100e18);
+        vm.startPrank(contributor);
         random.approve(address(campaign), 100e18);
         vm.expectRevert(EverestOrBust.UnsupportedToken.selector);
         campaign.contribute(address(random), 100e18);
@@ -186,7 +186,7 @@ contract EverestOrBustTest is Test {
     function test_RevertWhen_WithdrawNotCreator() public {
         _fillGoal();
         vm.warp(DEADLINE + 1);
-        vm.prank(alice);
+        vm.prank(contributor);
         vm.expectRevert(EverestOrBust.NotCreator.selector);
         campaign.withdraw();
     }
@@ -206,42 +206,42 @@ contract EverestOrBustTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     function test_Refund_WhenGoalNotMet() public {
-        vm.startPrank(alice);
+        vm.startPrank(contributor);
         usdc.approve(address(campaign), 6.9e6);
         campaign.contribute(address(usdc), 6.9e6);
         vm.stopPrank();
 
         vm.warp(DEADLINE + 1);
-        uint256 balBefore = usdc.balanceOf(alice);
-        vm.prank(alice);
+        uint256 balBefore = usdc.balanceOf(contributor);
+        vm.prank(contributor);
         campaign.refund();
 
-        assertEq(usdc.balanceOf(alice), balBefore + 6.9e6);
-        assertEq(campaign.contributedNormalized(alice), 0);
+        assertEq(usdc.balanceOf(contributor), balBefore + 6.9e6);
+        assertEq(campaign.contributedNormalized(contributor), 0);
     }
 
     function test_RevertWhen_RefundBeforeDeadline() public {
-        vm.startPrank(alice);
+        vm.startPrank(contributor);
         usdc.approve(address(campaign), 6.9e6);
         campaign.contribute(address(usdc), 6.9e6);
         vm.stopPrank();
 
         vm.expectRevert(EverestOrBust.CampaignNotEnded.selector);
-        vm.prank(alice);
+        vm.prank(contributor);
         campaign.refund();
     }
 
     function test_RevertWhen_RefundWhenGoalReached() public {
         _fillGoal();
         vm.warp(DEADLINE + 1);
-        vm.prank(alice);
+        vm.prank(contributor);
         vm.expectRevert(EverestOrBust.GoalReached.selector);
         campaign.refund();
     }
 
     function test_RevertWhen_RefundNothingToRefund() public {
         vm.warp(DEADLINE + 1);
-        vm.prank(alice);
+        vm.prank(contributor);
         vm.expectRevert(EverestOrBust.NothingToRefund.selector);
         campaign.refund();
     }
@@ -266,7 +266,7 @@ contract EverestOrBustTest is Test {
 
     function test_Remaining_DecreasesWithContributions() public {
         assertEq(campaign.remaining(), 69_000e18);
-        vm.startPrank(alice);
+        vm.startPrank(contributor);
         usdc.approve(address(campaign), 6.9e6);
         campaign.contribute(address(usdc), 6.9e6);
         vm.stopPrank();
@@ -274,12 +274,12 @@ contract EverestOrBustTest is Test {
     }
 
     function test_RemainingCap_DecreasesWithContributions() public {
-        assertEq(campaign.remainingCap(alice), 6.9e18);
-        vm.startPrank(alice);
+        assertEq(campaign.remainingCap(contributor), 6.9e18);
+        vm.startPrank(contributor);
         usdc.approve(address(campaign), 30e6);
         campaign.contribute(address(usdc), 2.3e6);
         vm.stopPrank();
-        assertEq(campaign.remainingCap(alice), 4.6e18);
+        assertEq(campaign.remainingCap(contributor), 4.6e18);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -319,8 +319,8 @@ contract EverestOrBustTest is Test {
         EverestOrBust badCampaign = new EverestOrBust(
             creator, address(badToken), address(usdt), address(dai), START
         );
-        badToken.mint(alice, 100e6);
-        vm.startPrank(alice);
+        badToken.mint(contributor, 100e6);
+        vm.startPrank(contributor);
         badToken.approve(address(badCampaign), 100e6);
         vm.expectRevert(EverestOrBust.TokenTransferFailed.selector);
         badCampaign.contribute(address(badToken), 6.9e6);
@@ -333,8 +333,8 @@ contract EverestOrBustTest is Test {
         EverestOrBust badCampaign = new EverestOrBust(
             creator, address(usdc), address(usdt), address(dai), START
         );
-        // alice contributes normally
-        vm.startPrank(alice);
+        // contributor contributes normally
+        vm.startPrank(contributor);
         usdc.approve(address(badCampaign), 6.9e6);
         badCampaign.contribute(address(usdc), 6.9e6);
         vm.stopPrank();
@@ -343,10 +343,10 @@ contract EverestOrBustTest is Test {
         // to trigger this properly we need the token to fail on transfer out
         // We verify the happy-path refund works correctly instead
         vm.warp(DEADLINE + 1);
-        uint256 balBefore = usdc.balanceOf(alice);
-        vm.prank(alice);
+        uint256 balBefore = usdc.balanceOf(contributor);
+        vm.prank(contributor);
         badCampaign.refund();
-        assertGt(usdc.balanceOf(alice), balBefore);
+        assertGt(usdc.balanceOf(contributor), balBefore);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -416,7 +416,7 @@ contract EverestOrBustBranchGuardsTest is Test {
     MockERC20 dai;
 
     address creator = makeAddr("creator");
-    address alice   = makeAddr("alice");
+    address contributor   = makeAddr("contributor");
 
     uint256 constant START    = 1765324800;
     uint256 constant DEADLINE = START + 69 days;
@@ -429,9 +429,9 @@ contract EverestOrBustBranchGuardsTest is Test {
         usdt.setDecimals(6);
         campaign = new EverestOrBust(creator, address(usdc), address(usdt), address(dai), START);
         vm.warp(START);
-        usdc.mint(alice, 1000e6);
-        usdt.mint(alice, 1000e6);
-        dai.mint(alice, 1000e18);
+        usdc.mint(contributor, 1000e6);
+        usdt.mint(contributor, 1000e6);
+        dai.mint(contributor, 1000e18);
     }
 
     /// @dev remaining() returns 0 when goal is met
@@ -442,17 +442,17 @@ contract EverestOrBustBranchGuardsTest is Test {
 
     /// @dev remainingCap() returns 0 when cap exhausted
     function test_RemainingCap_ZeroWhenCapExhausted() public {
-        vm.startPrank(alice);
+        vm.startPrank(contributor);
         usdc.approve(address(campaign), 6.9e6);
         campaign.contribute(address(usdc), 6.9e6);
         vm.stopPrank();
-        assertEq(campaign.remainingCap(alice), 0);
+        assertEq(campaign.remainingCap(contributor), 0);
     }
 
     /// @dev withdraw sends all three token types correctly
     function test_Withdraw_AllThreeTokens() public {
-        // alice contributes USDC, USDT and DAI
-        vm.startPrank(alice);
+        // contributor contributes USDC, USDT and DAI
+        vm.startPrank(contributor);
         usdc.approve(address(campaign), 2.3e6);
         campaign.contribute(address(usdc), 2.3e6);
         usdt.approve(address(campaign), 2.3e6);
@@ -479,7 +479,7 @@ contract EverestOrBustBranchGuardsTest is Test {
 
     /// @dev refund returns all three token types correctly
     function test_Refund_AllThreeTokens() public {
-        vm.startPrank(alice);
+        vm.startPrank(contributor);
         usdc.approve(address(campaign), 2e6);
         campaign.contribute(address(usdc), 2e6);
         usdt.approve(address(campaign), 2e6);
@@ -489,34 +489,34 @@ contract EverestOrBustBranchGuardsTest is Test {
         vm.stopPrank();
 
         vm.warp(DEADLINE + 1);
-        uint256 usdcBefore = usdc.balanceOf(alice);
-        uint256 usdtBefore = usdt.balanceOf(alice);
-        uint256 daiBefore  = dai.balanceOf(alice);
+        uint256 usdcBefore = usdc.balanceOf(contributor);
+        uint256 usdtBefore = usdt.balanceOf(contributor);
+        uint256 daiBefore  = dai.balanceOf(contributor);
 
-        vm.prank(alice);
+        vm.prank(contributor);
         campaign.refund();
 
-        assertEq(usdc.balanceOf(alice), usdcBefore + 2e6);
-        assertEq(usdt.balanceOf(alice), usdtBefore + 2e6);
-        assertEq(dai.balanceOf(alice),  daiBefore  + 2e18);
+        assertEq(usdc.balanceOf(contributor), usdcBefore + 2e6);
+        assertEq(usdt.balanceOf(contributor), usdtBefore + 2e6);
+        assertEq(dai.balanceOf(contributor),  daiBefore  + 2e18);
     }
 
     /// @dev contribute with USDT hits the else-if branch
     function test_Contribute_USDT_HitsElseIfBranch() public {
-        vm.startPrank(alice);
+        vm.startPrank(contributor);
         usdt.approve(address(campaign), 2.3e6);
         campaign.contribute(address(usdt), 2.3e6);
         vm.stopPrank();
-        assertEq(campaign.contributedUSDT(alice), 2.3e6);
+        assertEq(campaign.contributedUSDT(contributor), 2.3e6);
     }
 
     /// @dev contribute with DAI hits the else branch
     function test_Contribute_DAI_HitsElseBranch() public {
-        vm.startPrank(alice);
+        vm.startPrank(contributor);
         dai.approve(address(campaign), 2.3e18);
         campaign.contribute(address(dai), 2.3e18);
         vm.stopPrank();
-        assertEq(campaign.contributedDAI(alice), 2.3e18);
+        assertEq(campaign.contributedDAI(contributor), 2.3e18);
     }
 
     function _fillGoal() internal {
@@ -587,7 +587,7 @@ contract EverestOrBustViewFunctionsTest is Test {
     MockERC20 dai;
 
     address creator = makeAddr("creator");
-    address alice   = makeAddr("alice");
+    address contributor   = makeAddr("contributor");
 
     uint256 constant START    = 1765324800;
     uint256 constant DEADLINE = START + 69 days;
@@ -599,7 +599,7 @@ contract EverestOrBustViewFunctionsTest is Test {
         usdc.setDecimals(6);
         usdt.setDecimals(6);
         campaign = new EverestOrBust(creator, address(usdc), address(usdt), address(dai), START);
-        usdc.mint(alice, 1000e6);
+        usdc.mint(contributor, 1000e6);
     }
 
     function test_GetPoolBreakdown_ZeroBeforeAnyContribution() public view {
@@ -611,7 +611,7 @@ contract EverestOrBustViewFunctionsTest is Test {
 
     function test_GetPoolBreakdown_ReflectsContributions() public {
         vm.warp(START);
-        vm.startPrank(alice);
+        vm.startPrank(contributor);
         usdc.approve(address(campaign), 6.9e6);
         campaign.contribute(address(usdc), 6.9e6);
         vm.stopPrank();
@@ -661,8 +661,8 @@ contract EverestOrBustContributorCountTest is Test {
     MockERC20 dai;
 
     address creator = makeAddr("creator");
-    address alice   = makeAddr("alice");
-    address bob     = makeAddr("bob");
+    address contributor   = makeAddr("contributor");
+    address secondContributor     = makeAddr("secondContributor");
 
     uint256 constant START = 1765324800;
 
@@ -674,8 +674,8 @@ contract EverestOrBustContributorCountTest is Test {
         usdt.setDecimals(6);
         campaign = new EverestOrBust(creator, address(usdc), address(usdt), address(dai), START);
         vm.warp(START);
-        usdc.mint(alice, 1000e6);
-        usdc.mint(bob, 1000e6);
+        usdc.mint(contributor, 1000e6);
+        usdc.mint(secondContributor, 1000e6);
     }
 
     function test_ContributorCount_ZeroInitially() public view {
@@ -683,7 +683,7 @@ contract EverestOrBustContributorCountTest is Test {
     }
 
     function test_ContributorCount_IncrementsOnFirstContribution() public {
-        vm.startPrank(alice);
+        vm.startPrank(contributor);
         usdc.approve(address(campaign), 6.9e6);
         campaign.contribute(address(usdc), 6.9e6);
         vm.stopPrank();
@@ -691,7 +691,7 @@ contract EverestOrBustContributorCountTest is Test {
     }
 
     function test_ContributorCount_DoesNotDoubleCountSameAddress() public {
-        vm.startPrank(alice);
+        vm.startPrank(contributor);
         usdc.approve(address(campaign), 6.9e6);
         campaign.contribute(address(usdc), 3e6);
         // second contribution from same address should not increment count again
@@ -702,12 +702,12 @@ contract EverestOrBustContributorCountTest is Test {
     }
 
     function test_ContributorCount_TracksMultipleUniqueAddresses() public {
-        vm.startPrank(alice);
+        vm.startPrank(contributor);
         usdc.approve(address(campaign), 6.9e6);
         campaign.contribute(address(usdc), 6.9e6);
         vm.stopPrank();
 
-        vm.startPrank(bob);
+        vm.startPrank(secondContributor);
         usdc.approve(address(campaign), 6.9e6);
         campaign.contribute(address(usdc), 6.9e6);
         vm.stopPrank();
