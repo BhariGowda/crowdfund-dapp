@@ -10,7 +10,6 @@ contract EverestOrBustTest is Test {
 
     MockERC20 usdc;
     MockERC20 usdt;
-    MockERC20 dai;
 
     address creator = makeAddr("creator");
     address contributor   = makeAddr("contributor");
@@ -25,14 +24,12 @@ contract EverestOrBustTest is Test {
     function setUp() public {
         usdc = new MockERC20();
         usdt = new MockERC20();
-        dai  = new MockERC20();
 
-        // set 6 decimals for usdc and usdt
+        // both tokens are 6 decimals on Avalanche C-Chain
         usdc.setDecimals(6);
         usdt.setDecimals(6);
-        // dai stays 18
 
-        campaign = new EverestOrBust(creator, address(usdc), address(usdt), address(dai), START);
+        campaign = new EverestOrBust(creator, address(usdc), address(usdt), START);
 
         // warp to campaign start
         vm.warp(START);
@@ -40,11 +37,9 @@ contract EverestOrBustTest is Test {
         // mint tokens to contributors
         usdc.mint(contributor, 1000e6);
         usdt.mint(contributor, 1000e6);
-        dai.mint(contributor,  1000e18);
 
         usdc.mint(secondContributor, 1000e6);
         usdt.mint(secondContributor, 1000e6);
-        dai.mint(secondContributor,  1000e18);
 
         usdc.mint(nonContributor, 1000e6);
     }
@@ -74,23 +69,12 @@ contract EverestOrBustTest is Test {
         assertEq(campaign.contributedNormalized(contributor), 6.9e18);
     }
 
-    function test_Contribute_DAI() public {
-        vm.startPrank(contributor);
-        dai.approve(address(campaign), 6.9e18);
-        campaign.contribute(address(dai), 6.9e18);
-        vm.stopPrank();
-
-        assertEq(campaign.contributedDAI(contributor), 6.9e18);
-        assertEq(campaign.contributedNormalized(contributor), 6.9e18);
-    }
-
     function test_Contribute_MixedTokensUpToCap() public {
         vm.startPrank(contributor);
         usdc.approve(address(campaign), 2.3e6);
         campaign.contribute(address(usdc), 2.3e6);
-
-        dai.approve(address(campaign), 4.6e18);
-        campaign.contribute(address(dai), 4.6e18);
+        usdt.approve(address(campaign), 4.6e6);
+        campaign.contribute(address(usdt), 4.6e6);
         vm.stopPrank();
 
         assertEq(campaign.contributedNormalized(contributor), 6.9e18);
@@ -317,7 +301,7 @@ contract EverestOrBustTest is Test {
     function test_RevertWhen_TokenTransferFailedOnContribute() public {
         ReturnsFalseERC20 badToken = new ReturnsFalseERC20();
         EverestOrBust badCampaign = new EverestOrBust(
-            creator, address(badToken), address(usdt), address(dai), START
+            creator, address(badToken), address(usdt), START
         );
         badToken.mint(contributor, 100e6);
         vm.startPrank(contributor);
@@ -331,7 +315,7 @@ contract EverestOrBustTest is Test {
         ReturnsFalseERC20 badToken = new ReturnsFalseERC20();
         // deploy with a working mock first so contribute() works
         EverestOrBust badCampaign = new EverestOrBust(
-            creator, address(usdc), address(usdt), address(dai), START
+            creator, address(usdc), address(usdt), START
         );
         // contributor contributes normally
         vm.startPrank(contributor);
@@ -357,7 +341,7 @@ contract EverestOrBustTest is Test {
         // deploy a malicious token that re-enters contribute() during transferFrom
         ReentrantToken badToken = new ReentrantToken();
         EverestOrBust badCampaign = new EverestOrBust(
-            creator, address(badToken), address(usdt), address(dai), START
+            creator, address(badToken), address(usdt), START
         );
         badToken.setTarget(badCampaign);
         badToken.mint(address(this), 200e6);
@@ -413,7 +397,6 @@ contract EverestOrBustBranchGuardsTest is Test {
     EverestOrBust campaign;
     MockERC20 usdc;
     MockERC20 usdt;
-    MockERC20 dai;
 
     address creator = makeAddr("creator");
     address contributor   = makeAddr("contributor");
@@ -424,14 +407,12 @@ contract EverestOrBustBranchGuardsTest is Test {
     function setUp() public {
         usdc = new MockERC20();
         usdt = new MockERC20();
-        dai  = new MockERC20();
         usdc.setDecimals(6);
         usdt.setDecimals(6);
-        campaign = new EverestOrBust(creator, address(usdc), address(usdt), address(dai), START);
+        campaign = new EverestOrBust(creator, address(usdc), address(usdt), START);
         vm.warp(START);
         usdc.mint(contributor, 1000e6);
         usdt.mint(contributor, 1000e6);
-        dai.mint(contributor, 1000e18);
     }
 
     /// @dev remaining() returns 0 when goal is met
@@ -449,16 +430,13 @@ contract EverestOrBustBranchGuardsTest is Test {
         assertEq(campaign.remainingCap(contributor), 0);
     }
 
-    /// @dev withdraw sends all three token types correctly
-    function test_Withdraw_AllThreeTokens() public {
-        // contributor contributes USDC, USDT and DAI
+    /// @dev withdraw sends both token types correctly
+    function test_Withdraw_BothTokens() public {
         vm.startPrank(contributor);
-        usdc.approve(address(campaign), 2.3e6);
-        campaign.contribute(address(usdc), 2.3e6);
-        usdt.approve(address(campaign), 2.3e6);
-        campaign.contribute(address(usdt), 2.3e6);
-        dai.approve(address(campaign), 2.3e18);
-        campaign.contribute(address(dai), 2.3e18);
+        usdc.approve(address(campaign), 3.45e6);
+        campaign.contribute(address(usdc), 3.45e6);
+        usdt.approve(address(campaign), 3.45e6);
+        campaign.contribute(address(usdt), 3.45e6);
         vm.stopPrank();
 
         // fill rest of goal
@@ -467,38 +445,32 @@ contract EverestOrBustBranchGuardsTest is Test {
         vm.warp(DEADLINE + 1);
         uint256 usdcBefore = usdc.balanceOf(creator);
         uint256 usdtBefore = usdt.balanceOf(creator);
-        uint256 daiBefore  = dai.balanceOf(creator);
 
         vm.prank(creator);
         campaign.withdraw();
 
         assertGt(usdc.balanceOf(creator), usdcBefore);
         assertGt(usdt.balanceOf(creator), usdtBefore);
-        assertGt(dai.balanceOf(creator),  daiBefore);
     }
 
-    /// @dev refund returns all three token types correctly
-    function test_Refund_AllThreeTokens() public {
+    /// @dev refund returns both token types correctly
+    function test_Refund_BothTokens() public {
         vm.startPrank(contributor);
-        usdc.approve(address(campaign), 2e6);
-        campaign.contribute(address(usdc), 2e6);
-        usdt.approve(address(campaign), 2e6);
-        campaign.contribute(address(usdt), 2e6);
-        dai.approve(address(campaign), 2e18);
-        campaign.contribute(address(dai), 2e18);
+        usdc.approve(address(campaign), 3e6);
+        campaign.contribute(address(usdc), 3e6);
+        usdt.approve(address(campaign), 3e6);
+        campaign.contribute(address(usdt), 3e6);
         vm.stopPrank();
 
         vm.warp(DEADLINE + 1);
         uint256 usdcBefore = usdc.balanceOf(contributor);
         uint256 usdtBefore = usdt.balanceOf(contributor);
-        uint256 daiBefore  = dai.balanceOf(contributor);
 
         vm.prank(contributor);
         campaign.refund();
 
-        assertEq(usdc.balanceOf(contributor), usdcBefore + 2e6);
-        assertEq(usdt.balanceOf(contributor), usdtBefore + 2e6);
-        assertEq(dai.balanceOf(contributor),  daiBefore  + 2e18);
+        assertEq(usdc.balanceOf(contributor), usdcBefore + 3e6);
+        assertEq(usdt.balanceOf(contributor), usdtBefore + 3e6);
     }
 
     /// @dev contribute with USDT hits the else-if branch
@@ -510,14 +482,6 @@ contract EverestOrBustBranchGuardsTest is Test {
         assertEq(campaign.contributedUSDT(contributor), 2.3e6);
     }
 
-    /// @dev contribute with DAI hits the else branch
-    function test_Contribute_DAI_HitsElseBranch() public {
-        vm.startPrank(contributor);
-        dai.approve(address(campaign), 2.3e18);
-        campaign.contribute(address(dai), 2.3e18);
-        vm.stopPrank();
-        assertEq(campaign.contributedDAI(contributor), 2.3e18);
-    }
 
     function _fillGoal() internal {
         uint256 needed = 10_000;
@@ -548,34 +512,27 @@ contract EverestOrBustBranchGuardsTest is Test {
 contract EverestOrBustConstructorGuardsTest is Test {
     MockERC20 usdc;
     MockERC20 usdt;
-    MockERC20 dai;
 
     function setUp() public {
         usdc = new MockERC20();
         usdt = new MockERC20();
-        dai  = new MockERC20();
         usdc.setDecimals(6);
         usdt.setDecimals(6);
     }
 
     function test_RevertWhen_ZeroCreator() public {
         vm.expectRevert(EverestOrBust.NotCreator.selector);
-        new EverestOrBust(address(0), address(usdc), address(usdt), address(dai), block.timestamp + 1);
+        new EverestOrBust(address(0), address(usdc), address(usdt), block.timestamp + 1);
     }
 
     function test_RevertWhen_ZeroUSDC() public {
         vm.expectRevert(EverestOrBust.UnsupportedToken.selector);
-        new EverestOrBust(address(this), address(0), address(usdt), address(dai), block.timestamp + 1);
+        new EverestOrBust(address(this), address(0), address(usdt), block.timestamp + 1);
     }
 
     function test_RevertWhen_ZeroUSDT() public {
         vm.expectRevert(EverestOrBust.UnsupportedToken.selector);
-        new EverestOrBust(address(this), address(usdc), address(0), address(dai), block.timestamp + 1);
-    }
-
-    function test_RevertWhen_ZeroDAI() public {
-        vm.expectRevert(EverestOrBust.UnsupportedToken.selector);
-        new EverestOrBust(address(this), address(usdc), address(usdt), address(0), block.timestamp + 1);
+        new EverestOrBust(address(this), address(usdc), address(0), block.timestamp + 1);
     }
 }
 
@@ -584,7 +541,6 @@ contract EverestOrBustViewFunctionsTest is Test {
     EverestOrBust campaign;
     MockERC20 usdc;
     MockERC20 usdt;
-    MockERC20 dai;
 
     address creator = makeAddr("creator");
     address contributor   = makeAddr("contributor");
@@ -595,18 +551,16 @@ contract EverestOrBustViewFunctionsTest is Test {
     function setUp() public {
         usdc = new MockERC20();
         usdt = new MockERC20();
-        dai  = new MockERC20();
         usdc.setDecimals(6);
         usdt.setDecimals(6);
-        campaign = new EverestOrBust(creator, address(usdc), address(usdt), address(dai), START);
+        campaign = new EverestOrBust(creator, address(usdc), address(usdt), START);
         usdc.mint(contributor, 1000e6);
     }
 
     function test_GetPoolBreakdown_ZeroBeforeAnyContribution() public view {
-        (uint256 usdcBal, uint256 usdtBal, uint256 daiBal) = campaign.getPoolBreakdown();
+        (uint256 usdcBal, uint256 usdtBal) = campaign.getPoolBreakdown();
         assertEq(usdcBal, 0);
         assertEq(usdtBal, 0);
-        assertEq(daiBal, 0);
     }
 
     function test_GetPoolBreakdown_ReflectsContributions() public {
@@ -616,10 +570,9 @@ contract EverestOrBustViewFunctionsTest is Test {
         campaign.contribute(address(usdc), 6.9e6);
         vm.stopPrank();
 
-        (uint256 usdcBal, uint256 usdtBal, uint256 daiBal) = campaign.getPoolBreakdown();
+        (uint256 usdcBal, uint256 usdtBal) = campaign.getPoolBreakdown();
         assertEq(usdcBal, 6.9e6);
         assertEq(usdtBal, 0);
-        assertEq(daiBal, 0);
     }
 
     function test_GetCampaignStatus_NotStarted() public {
@@ -658,7 +611,6 @@ contract EverestOrBustContributorCountTest is Test {
     EverestOrBust campaign;
     MockERC20 usdc;
     MockERC20 usdt;
-    MockERC20 dai;
 
     address creator = makeAddr("creator");
     address contributor   = makeAddr("contributor");
@@ -669,10 +621,9 @@ contract EverestOrBustContributorCountTest is Test {
     function setUp() public {
         usdc = new MockERC20();
         usdt = new MockERC20();
-        dai  = new MockERC20();
         usdc.setDecimals(6);
         usdt.setDecimals(6);
-        campaign = new EverestOrBust(creator, address(usdc), address(usdt), address(dai), START);
+        campaign = new EverestOrBust(creator, address(usdc), address(usdt), START);
         vm.warp(START);
         usdc.mint(contributor, 1000e6);
         usdc.mint(secondContributor, 1000e6);
@@ -757,7 +708,6 @@ contract EverestOrBustBlacklistResilienceTest is Test {
     EverestOrBust campaign;
     BlacklistableERC20 usdc;
     MockERC20 usdt;
-    MockERC20 dai;
 
     address creator = makeAddr("creator");
     address applyMe = makeAddr("applyMe");
@@ -768,26 +718,22 @@ contract EverestOrBustBlacklistResilienceTest is Test {
     function setUp() public {
         usdc = new BlacklistableERC20();
         usdt = new MockERC20();
-        dai  = new MockERC20();
         usdt.setDecimals(6);
 
-        campaign = new EverestOrBust(creator, address(usdc), address(usdt), address(dai), START);
+        campaign = new EverestOrBust(creator, address(usdc), address(usdt), START);
         vm.warp(START);
 
         usdc.mint(applyMe, 3e6);
-        usdt.mint(applyMe, 2e6);
-        dai.mint(applyMe, 1.9e18);
+        usdt.mint(applyMe, 3.9e6);
     }
 
     function test_RefundStillPaysOutUnblockedTokensWhenOneIsBlacklisted() public {
-        // applyMe contributes across all three tokens
+        // applyMe contributes across both tokens
         vm.startPrank(applyMe);
         usdc.approve(address(campaign), 3e6);
         campaign.contribute(address(usdc), 3e6);
-        usdt.approve(address(campaign), 2e6);
-        campaign.contribute(address(usdt), 2e6);
-        dai.approve(address(campaign), 1.9e18);
-        campaign.contribute(address(dai), 1.9e18);
+        usdt.approve(address(campaign), 3.9e6);
+        campaign.contribute(address(usdt), 3.9e6);
         vm.stopPrank();
 
         // applyMe gets blacklisted on USDC only, AFTER contributing (e.g. flagged mid-campaign)
@@ -797,15 +743,13 @@ contract EverestOrBustBlacklistResilienceTest is Test {
         vm.warp(DEADLINE + 1);
 
         uint256 usdtBefore = usdt.balanceOf(applyMe);
-        uint256 daiBefore  = dai.balanceOf(applyMe);
 
         // refund() must NOT revert just because USDC transfer fails
         vm.prank(applyMe);
         campaign.refund();
 
-        // USDT and DAI refunds went through despite the USDC failure
-        assertEq(usdt.balanceOf(applyMe), usdtBefore + 2e6);
-        assertEq(dai.balanceOf(applyMe), daiBefore + 1.9e18);
+        // USDT refund went through despite the USDC failure
+        assertEq(usdt.balanceOf(applyMe), usdtBefore + 3.9e6);
 
         // the USDC amount is NOT lost — it's tracked as stuck, claimable later
         assertEq(campaign.stuckBalance(applyMe, address(usdc)), 3e6);
@@ -874,7 +818,6 @@ contract EverestOrBustBoundaryTimestampTest is Test {
     EverestOrBust campaign;
     MockERC20 usdc;
     MockERC20 usdt;
-    MockERC20 dai;
 
     address campaignCreator = makeAddr("campaignCreator");
     address contributor     = makeAddr("contributor");
@@ -885,10 +828,9 @@ contract EverestOrBustBoundaryTimestampTest is Test {
     function setUp() public {
         usdc = new MockERC20();
         usdt = new MockERC20();
-        dai  = new MockERC20();
         usdc.setDecimals(6);
         usdt.setDecimals(6);
-        campaign = new EverestOrBust(campaignCreator, address(usdc), address(usdt), address(dai), START);
+        campaign = new EverestOrBust(campaignCreator, address(usdc), address(usdt), START);
         usdc.mint(contributor, 100e6);
     }
 
@@ -1037,7 +979,6 @@ contract EverestOrBustFeeOnTransferTest is Test {
     EverestOrBust campaign;
     FeeOnTransferERC20Everest feeToken;
     MockERC20 usdt;
-    MockERC20 dai;
 
     address campaignCreator = makeAddr("campaignCreator");
     address contributor     = makeAddr("contributor");
@@ -1047,11 +988,10 @@ contract EverestOrBustFeeOnTransferTest is Test {
     function setUp() public {
         feeToken = new FeeOnTransferERC20Everest();
         usdt = new MockERC20();
-        dai  = new MockERC20();
         usdt.setDecimals(6);
 
         // deploy campaign treating feeToken AS the "USDC" slot to exercise the defense
-        campaign = new EverestOrBust(campaignCreator, address(feeToken), address(usdt), address(dai), START);
+        campaign = new EverestOrBust(campaignCreator, address(feeToken), address(usdt), START);
         vm.warp(START);
 
         feeToken.mint(contributor, 100e6);

@@ -5,15 +5,14 @@ import {IERC20} from "./IERC20.sol";
 
 /// @title EverestOrBust
 /// @author Bhari Gowda
-/// @notice Multi-stablecoin fundraise for the Everest summit attempt, 2027.
+/// @notice Stablecoin fundraise for the Everest summit attempt, 2027, on Avalanche C-Chain.
 ///         $69,000 goal. 69-day campaign (Dec 10 2026 - Feb 17 2027).
-///         Accepts USDC, USDT, and DAI. No price oracle needed.
-///         Each address may contribute at most $6.9 total across all tokens.
+///         Accepts USDC and USDT only. No price oracle needed.
+///         Each address may contribute at most $6.9 total across both tokens.
 ///         If the goal is not reached, contributors may refund in full.
-///         If the goal is exceeded, contributors may redeem their pro-rata excess.
-/// @dev    All internal accounting uses 18-decimal normalized units.
-///         USDC and USDT (6 decimals) are scaled up by 1e12 on ingress
-///         and scaled back down on egress. DAI (18 decimals) passes through.
+/// @dev    Both USDC and USDT are 6 decimals on Avalanche C-Chain. All internal
+///         accounting is normalized to 18 decimals for consistency with the
+///         $6.9/$69,000 constants, scaled by 1e12.
 contract EverestOrBust {
     /*//////////////////////////////////////////////////////////////
                                CONSTANTS
@@ -64,8 +63,8 @@ contract EverestOrBust {
     //////////////////////////////////////////////////////////////*/
 
     event Contributed(address indexed contributor, address indexed token, uint256 amount, uint256 normalized);
-    event Withdrawn(address indexed creator, uint256 usdc, uint256 usdt, uint256 dai);
-    event Refunded(address indexed contributor, uint256 usdc, uint256 usdt, uint256 dai);
+    event Withdrawn(address indexed creator, uint256 usdc, uint256 usdt);
+    event Refunded(address indexed contributor, uint256 usdc, uint256 usdt);
     event TransferStuck(address indexed to, address indexed token, uint256 amount);
     event StuckClaimed(address indexed to, address indexed token, uint256 amount);
 
@@ -79,9 +78,8 @@ contract EverestOrBust {
 
     address public immutable USDC;
     address public immutable USDT;
-    address public immutable DAI;
 
-    /// @notice Total raised across all tokens, normalized to 18 decimals
+    /// @notice Total raised across both tokens, normalized to 18 decimals
     uint256 public totalRaisedNormalized;
 
     /// @notice Per-contributor total contributed, normalized
@@ -90,7 +88,6 @@ contract EverestOrBust {
     /// @notice Per-contributor raw token contributions (native decimals)
     mapping(address => uint256) public contributedUSDC;
     mapping(address => uint256) public contributedUSDT;
-    mapping(address => uint256) public contributedDAI;
 
     bool public withdrawn;
 
@@ -108,17 +105,15 @@ contract EverestOrBust {
     //////////////////////////////////////////////////////////////*/
 
     /// @param _creator Address entitled to withdraw if goal is met
-    /// @param _usdc    USDC token address
-    /// @param _usdt    USDT token address
-    /// @param _dai     DAI token address
+    /// @param _usdc    USDC token address (Avalanche C-Chain native USDC)
+    /// @param _usdt    USDT token address (Avalanche C-Chain)
     /// @param _start   Campaign start timestamp (Dec 10 2026 = 1765324800)
-    constructor(address _creator, address _usdc, address _usdt, address _dai, uint256 _start) {
+    constructor(address _creator, address _usdc, address _usdt, uint256 _start) {
         if (_creator == address(0)) revert NotCreator();
-        if (_usdc == address(0) || _usdt == address(0) || _dai == address(0)) revert UnsupportedToken();
+        if (_usdc == address(0) || _usdt == address(0)) revert UnsupportedToken();
         creator = _creator;
         USDC = _usdc;
         USDT = _usdt;
-        DAI = _dai;
         start = _start;
         deadline = _start + (DURATION_DAYS * 1 days);
     }
@@ -131,7 +126,7 @@ contract EverestOrBust {
     /// @dev Caller must approve this contract first.
     ///      Excess above the $6.9 per-address cap is automatically rejected —
     ///      only the capped amount is pulled.
-    /// @param token  USDC, USDT, or DAI address
+    /// @param token  USDC or USDT address
     /// @param amount Amount in the token's native decimals
     function contribute(address token, uint256 amount) external nonReentrant {
         if (block.timestamp < start) revert CampaignNotStarted();
@@ -146,11 +141,11 @@ contract EverestOrBust {
         // cap to remaining allowance
         if (normalized > remaining) {
             normalized = remaining;
-            amount = _denormalize(token, normalized);
+            amount = _denormalize(normalized);
         }
 
         // Pull tokens BEFORE crediting state, measuring the actual balance delta.
-        // USDC/USDT/DAI do not currently charge transfer fees, but this protects
+        // USDC/USDT do not currently charge transfer fees, but this protects
         // against any future fee-on-transfer or deflationary behavior so contributor
         // credit always matches what the contract actually received, not what was
         // requested. Reentrancy is prevented by nonReentrant, same pattern as
@@ -170,8 +165,7 @@ contract EverestOrBust {
         totalRaisedNormalized += normalized;
 
         if (token == USDC) contributedUSDC[msg.sender] += amount;
-        else if (token == USDT) contributedUSDT[msg.sender] += amount;
-        else contributedDAI[msg.sender] += amount;
+        else contributedUSDT[msg.sender] += amount;
 
         emit Contributed(msg.sender, token, amount, normalized);
     }
@@ -190,15 +184,13 @@ contract EverestOrBust {
 
         uint256 usdcBal = IERC20(USDC).balanceOf(address(this));
         uint256 usdtBal = IERC20(USDT).balanceOf(address(this));
-        uint256 daiBal = IERC20(DAI).balanceOf(address(this));
 
         // Each token transfer is isolated so a single blacklisted/frozen token
-        // (e.g. USDC/USDT compliance freeze) cannot trap funds in the other two.
+        // (e.g. USDC/USDT compliance freeze) cannot trap funds in the other.
         if (usdcBal > 0) _trySendToken(USDC, creator, usdcBal);
         if (usdtBal > 0) _trySendToken(USDT, creator, usdtBal);
-        if (daiBal > 0) _trySendToken(DAI, creator, daiBal);
 
-        emit Withdrawn(creator, usdcBal, usdtBal, daiBal);
+        emit Withdrawn(creator, usdcBal, usdtBal);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -213,21 +205,18 @@ contract EverestOrBust {
         uint256 normalizedAmt = contributedNormalized[msg.sender];
         uint256 usdcAmt = contributedUSDC[msg.sender];
         uint256 usdtAmt = contributedUSDT[msg.sender];
-        uint256 daiAmt = contributedDAI[msg.sender];
-        if (usdcAmt == 0 && usdtAmt == 0 && daiAmt == 0) revert NothingToRefund();
+        if (usdcAmt == 0 && usdtAmt == 0) revert NothingToRefund();
 
         contributedUSDC[msg.sender] = 0;
         contributedUSDT[msg.sender] = 0;
-        contributedDAI[msg.sender] = 0;
         contributedNormalized[msg.sender] = 0;
         totalRaisedNormalized -= normalizedAmt;
 
         // Each token transfer is isolated so a single blacklisted/frozen token
-        // cannot trap the contributor's refund in the other two tokens.
+        // cannot trap the contributor's refund in the other.
         if (usdcAmt > 0) _trySendToken(USDC, msg.sender, usdcAmt);
         if (usdtAmt > 0) _trySendToken(USDT, msg.sender, usdtAmt);
-        if (daiAmt > 0) _trySendToken(DAI, msg.sender, daiAmt);
-        emit Refunded(msg.sender, usdcAmt, usdtAmt, daiAmt);
+        emit Refunded(msg.sender, usdcAmt, usdtAmt);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -255,11 +244,9 @@ contract EverestOrBust {
     /// @notice Current pool balance per token, for frontend display.
     /// @return usdcBal Current USDC balance held by this contract
     /// @return usdtBal Current USDT balance held by this contract
-    /// @return daiBal  Current DAI balance held by this contract
-    function getPoolBreakdown() external view returns (uint256 usdcBal, uint256 usdtBal, uint256 daiBal) {
+    function getPoolBreakdown() external view returns (uint256 usdcBal, uint256 usdtBal) {
         usdcBal = IERC20(USDC).balanceOf(address(this));
         usdtBal = IERC20(USDT).balanceOf(address(this));
-        daiBal = IERC20(DAI).balanceOf(address(this));
     }
 
     /// @notice Campaign lifecycle status, so frontends don't need to replicate this logic.
@@ -273,7 +260,7 @@ contract EverestOrBust {
 
     /// @notice Reclaim a token transfer that previously failed (e.g. blacklisted by USDC/USDT).
     /// @param to    The address whose stuck balance is being claimed
-    /// @param token USDC, USDT, or DAI
+    /// @param token USDC or USDT
     function claimStuck(address to, address token) external nonReentrant {
         uint256 amount = stuckBalance[to][token];
         if (amount == 0) revert NothingToRefund();
@@ -286,16 +273,15 @@ contract EverestOrBust {
                            INTERNAL HELPERS
     //////////////////////////////////////////////////////////////*/
 
+    /// @dev Both USDC and USDT are 6 decimals on Avalanche — always scale up by 1e12.
     function _normalize(address token, uint256 amount) internal view returns (uint256) {
-        if (token == USDC || token == USDT) return amount * SCALE_6;
-        if (token == DAI) return amount;
-        revert UnsupportedToken();
+        if (token != USDC && token != USDT) revert UnsupportedToken();
+        return amount * SCALE_6;
     }
 
-    function _denormalize(address token, uint256 normalized) internal view returns (uint256) {
-        if (token == USDC || token == USDT) return normalized / SCALE_6;
-        if (token == DAI) return normalized;
-        revert UnsupportedToken();
+    /// @dev Both tokens share 6 decimals, so denormalization doesn't need to branch by token.
+    function _denormalize(uint256 normalized) internal pure returns (uint256) {
+        return normalized / SCALE_6;
     }
 
     function _pullToken(address token, address from, address to, uint256 amount) internal {
