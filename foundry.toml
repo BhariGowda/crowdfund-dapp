@@ -15,11 +15,11 @@ fs_permissions = [{ access = "read", path = "./" }]
 runs = 1000
 
 [rpc_endpoints]
-mainnet = "${ETH_RPC_URL}"
-sepolia = "${SEPOLIA_RPC_URL}"
+avalanche = "${AVALANCHE_RPC_URL}"
+fuji = "${FUJI_RPC_URL}"
 
 [etherscan]
-mainnet = { key = "${ETHERSCAN_API_KEY}", chain = 1 }
-sepolia = { key = "${ETHERSCAN_API_KEY}", chain = 11155111 }
+avalanche = { key = "${SNOWTRACE_API_KEY}", chain = 43114, url = "https://api.snowtrace.io/api" }
+fuji = { key = "${SNOWTRACE_API_KEY}", chain = 43113, url = "https://api-testnet.snowtrace.io/api" }
 
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md
