@@ -1,32 +1,29 @@
-# CrowdFund DApp
+# SummitFund
 
-A decentralized crowdfunding protocol built in Solidity the smart contract infrastructure behind my personal Everest summit fundraise.
+A decentralized crowdfunding protocol built in Solidity — the smart contract infrastructure behind my personal Everest summit fundraise.
 
 ## The Real Use Case
 
-In 2027 I'm attempting to summit Mount Everest. The goal is $69,000. No bank, no Kickstarter, no middleman the funds are held on-chain, contributors get auto-refunds if the summit fails, and milestone releases ensure accountability along the way.
+In April 2027 I'm attempting to summit Mount Everest. The goal is $69,000. No bank, no Kickstarter, no middleman — the funds are held on-chain, contributors get auto-refunds if the goal isn't met by the deadline.
 
-This protocol is what makes that possible. It started as a single `Crowdfund.sol` for the EverestOrBust campaign. It grew into a full protocol suite with a factory, milestone-based fund releases, and contribution-weighted governance over fund disbursement.
+This protocol is what makes that possible. It started as a single crowdfund contract for the EverestOrBust campaign. It grew into a full protocol suite with a factory and milestone-based fund releases as standalone portfolio pieces, alongside EverestOrBust as the real, deployed campaign.
 
 [Follow the climb →](https://twitter.com/gowdabhari)
 
 ## Protocol
 
-Three contracts, one purpose:
+**EverestOrBust.sol** — the actual campaign contract, on Avalanche C-Chain. USDC and USDT only. $6.9 cap per address. $69,000 goal, 10,000 contributors. 69-day campaign (Dec 10 2026 – Feb 17 2027). Auto-refund if goal not met. Contributions close automatically once the goal is reached. No price oracle — stablecoins only.
 
-**CrowdFund.sol**  single campaign escrow. ETH or any ERC20 token. Auto-refund if the goal isn't met by the deadline. Used directly for the EverestOrBust campaign.
+**CrowdFund.sol** — general-purpose single campaign escrow. ETH or any ERC20 token. Auto-refund if the goal isn't met by the deadline. Chain-agnostic, standalone.
 
-**EverestOrBust.sol** the actual campaign contract. USDC, USDT, and DAI. $69 cap per address. $69,000 goal. 69-day campaign (Jan 1 – Mar 10 2027). Auto-refund if goal not met. Pro-rata excess redemption if overfunded. No oracle needed — stablecoins only.
+**CrowdFundFactory.sol** — CREATE2 deployer. Predictable addresses, per-creator campaign tracking, ETH and ERC20 variants. Chain-agnostic.
 
-**CrowdFundFactory.sol**  CREATE2 deployer. Predictable addresses, per-creator campaign tracking, ETH and ERC20 variants.
-
-**MilestoneCrowdFund.sol**  milestone-based fund release with contributor voting. The creator requests each milestone; contributors vote to approve or reject. Rejected milestones trigger a pro-rata refund of the remaining pool. Built for campaigns where accountability matters.
+**MilestoneCrowdFund.sol** — milestone-based fund release with contributor voting. The creator requests each milestone; contributors vote to approve or reject. Rejected milestones trigger a pro-rata refund of the remaining pool. Standalone — not used by EverestOrBust, which is a simpler one-time all-or-nothing campaign.
 
 ## Stack
 
 - Solidity ^0.8.20 + Foundry
-- React + TypeScript + Viem + Wagmi
-- Ethereum mainnet + Sepolia testnet
+- Avalanche C-Chain (Fuji testnet → mainnet)
 
 ## Tests
 
@@ -36,14 +33,11 @@ forge build
 forge test
 ```
 
-181 tests passing  unit, fuzz (1000 runs/property), and invariant (500,000 calls/invariant). Every custom error has an explicit revert test. Reentrancy guards verified by execution trace against malicious creator contracts.
+206 tests passing — unit, fuzz (1000 runs/property), and invariant (500,000 calls/invariant). Every custom error has an explicit revert test. Reentrancy guards verified by execution trace against malicious token and creator contracts.
 
-## Stats
+## Security Highlights
 
-- 148 tests passing (unit, fuzz & invariant)
-- 4 contracts: CrowdFund, CrowdFundFactory, MilestoneCrowdFund, EverestOrBust
-- Full NatSpec documentation
-- 81.61% branch coverage
+Five real defects found and fixed during self-audit, including a denial-of-service where a single blacklisted USDC/USDT address could trap a contributor's entire refund. Full findings in [docs/AUDIT.md](docs/AUDIT.md). A professional third-party audit is planned before mainnet deployment.
 
 ## Documentation
 
