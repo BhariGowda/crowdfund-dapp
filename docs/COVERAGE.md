@@ -9,10 +9,10 @@ forge coverage --report summary --ir-minimum
 
 | Metric | Coverage |
 |---|---|
-| Lines | 92.90% (340/366) |
-| Statements | 92.05% (359/390) |
-| Branches | 81.61% (71/87) |
-| Functions | 91.95% (80/87) |
+| Lines | 89.55% (480/536) |
+| Statements | 89.04% (528/593) |
+| Branches | 84.13% (106/126) |
+| Functions | 90.91% (110/121) |
 
 ## Per-Contract Breakdown
 
@@ -21,9 +21,9 @@ forge coverage --report summary --ir-minimum
 | CrowdFund | 100% | 97.85% | 91.30% | 100% |
 | CrowdFundFactory | 100% | 100% | 100% | 100% |
 | MilestoneCrowdFund | 98.52% | 96.41% | 90.91% | 100% |
-| EverestOrBust | 97.87% | 95.77% | 92.11% | 100% |
+| EverestOrBust | 100% | 97.90% | 91.67% | 100% |
 
-196 tests passing across unit, fuzz (1000 runs/property), and invariant (500,000 calls/invariant) suites. EverestOrBust: contributions now close automatically once the $69,000 goal is reached, eliminating the need for excess redemption entirely (redeemExcess() removed as dead code).
+206 tests passing across unit, fuzz (1000 runs/property), and invariant (500,000 calls/invariant) suites. EverestOrBust pivoted to Avalanche C-Chain, USDC/USDT only (DAI dropped) — removing the mixed-decimal normalization logic simplified the contract and raised coverage further. Contributions close automatically once the $69,000 goal is reached.
 
 ## Remaining Gaps
 
