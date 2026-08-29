@@ -1,5 +1,19 @@
 # Changelog
 
+## [2.0.0] - 2026-08-XX
+### Changed — Avalanche Pivot
+- **Network:** Ethereum mainnet + Sepolia → Avalanche C-Chain mainnet + Fuji testnet
+  - Prioritizes sub-2-second finality, low fees, full EVM compatibility (zero Solidity changes needed)
+  - `foundry.toml` and `.env.example` updated: `AVALANCHE_RPC_URL`/`FUJI_RPC_URL` replace `ETH_RPC_URL`/`SEPOLIA_RPC_URL`, Snowtrace replaces Etherscan
+- **Tokens:** DAI dropped, USDC + USDT only
+  - Public campaign, no anonymity — centrally issued, compliance-backed stablecoins fit better than DAI's crypto-collateralized model
+  - Both tokens are 6 decimals on Avalanche — `_normalize`/`_denormalize` simplified, no more mixed-decimal handling
+  - `EverestOrBust.sol` constructor: `(creator, usdc, usdt, dai, start)` → `(creator, usdc, usdt, start)`
+- Repo renamed to match ENS domain: `BhariGowda/SummitFund` → `BhariGowda/summitfund.eth`
+- 206/206 tests passing post-pivot; EverestOrBust coverage improved to 100% lines / 97.9% statements / 91.67% branch / 100% functions
+- All 5 prior self-audit fixes (D-01 through D-05) and the fee-on-transfer hardening carried over unchanged — chain-independent Solidity logic
+- All documentation rewritten: README, ARCHITECTURE, DEPLOYMENT, COVERAGE, SUMMITFUND.md playbook
+
 ## [1.5.0] - 2026-07-05
 ### Changed
 - `EverestOrBust.sol` — contribution cap reduced from $69 to $6.9 per address
