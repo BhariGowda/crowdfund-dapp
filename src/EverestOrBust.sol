@@ -47,6 +47,7 @@ contract EverestOrBust {
     error Reentrancy();
     error NotCreator();
     error CampaignNotStarted();
+    error InvalidStartTime();
     error CampaignEnded();
     error CampaignNotEnded();
     error GoalNotReached();
@@ -111,6 +112,7 @@ contract EverestOrBust {
     constructor(address _creator, address _usdc, address _usdt, uint256 _start) {
         if (_creator == address(0)) revert NotCreator();
         if (_usdc == address(0) || _usdt == address(0)) revert UnsupportedToken();
+        if (_start < block.timestamp) revert InvalidStartTime();
         creator = _creator;
         USDC = _usdc;
         USDT = _usdt;
@@ -136,29 +138,29 @@ contract EverestOrBust {
         if (totalRaisedNormalized >= GOAL) revert GoalReached();
 
         uint256 normalized = _normalize(token, amount);
-        uint256 remaining = CAP_PER_ADDRESS - contributedNormalized[msg.sender];
 
-        // cap to remaining allowance
-        if (normalized > remaining) {
-            normalized = remaining;
+        // Cap to whichever is smaller: the caller's remaining per-address allowance,
+        // or the campaign's remaining goal. Both must be respected simultaneously so
+        // totalRaisedNormalized can never exceed GOAL, matching the documented
+        // "contributions close automatically at $69,000" behavior exactly.
+        uint256 remainingAllowance = CAP_PER_ADDRESS - contributedNormalized[msg.sender];
+        uint256 remainingGoal = GOAL - totalRaisedNormalized;
+        uint256 capLimit = remainingAllowance < remainingGoal ? remainingAllowance : remainingGoal;
+
+        if (normalized > capLimit) {
+            normalized = capLimit;
             amount = _denormalize(normalized);
         }
 
-        // Pull tokens BEFORE crediting state, measuring the actual balance delta.
-        // USDC/USDT do not currently charge transfer fees, but this protects
-        // against any future fee-on-transfer or deflationary behavior so contributor
-        // credit always matches what the contract actually received, not what was
-        // requested. Reentrancy is prevented by nonReentrant, same pattern as
-        // CrowdFund.sol's ERC20 contribution path.
+        // Pull tokens and require the exact requested amount to arrive. USDC and USDT
+        // are the only two tokens this campaign accepts, and neither charges transfer
+        // fees — rather than silently reconciling a mismatch (which can desync token
+        // accounting from normalized accounting), a divergence here means something
+        // is genuinely wrong with the token and the transaction reverts loudly.
         uint256 balanceBefore = IERC20(token).balanceOf(address(this));
         _pullToken(token, msg.sender, address(this), amount);
         uint256 received = IERC20(token).balanceOf(address(this)) - balanceBefore;
-        if (received == 0) revert ZeroAmount();
-        if (received != amount) {
-            amount = received;
-            normalized = _normalize(token, amount);
-            if (normalized > remaining) normalized = remaining;
-        }
+        if (received != amount) revert TokenTransferFailed();
 
         if (contributedNormalized[msg.sender] == 0) contributorCount++;
         contributedNormalized[msg.sender] += normalized;

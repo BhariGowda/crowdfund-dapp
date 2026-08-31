@@ -997,17 +997,146 @@ contract EverestOrBustFeeOnTransferTest is Test {
         feeToken.mint(contributor, 100e6);
     }
 
-    function test_Contribute_CreditsActualAmountReceived_NotRequestedAmount() public {
+    /// @dev EverestOrBust only ever accepts USDC/USDT, neither of which charges
+    /// transfer fees. Rather than silently reconciling a received-amount mismatch
+    /// (which could desync token accounting from normalized accounting — see the
+    /// discussion in src/EverestOrBust.sol's contribute()), the contract now reverts
+    /// loudly if the actual amount received doesn't match what was requested. This
+    /// test proves that defense fires correctly against a fee-on-transfer token.
+    function test_RevertWhen_FeeOnTransferTokenReceivedAmountMismatch() public {
         vm.startPrank(contributor);
         feeToken.approve(address(campaign), 5e6);
-        // requests 5e6 (under the $6.9 cap so it isn't capped), but 10% fee means
-        // only 4.5e6 actually arrives
+        vm.expectRevert(EverestOrBust.TokenTransferFailed.selector);
         campaign.contribute(address(feeToken), 5e6);
         vm.stopPrank();
+    }
+}
 
-        // contributor should be credited for 4.5e6 (what arrived), NOT 5e6 (what was requested)
-        assertEq(campaign.contributedUSDC(contributor), 4.5e6);
-        assertEq(feeToken.balanceOf(address(campaign)), 4.5e6);
-        assertEq(campaign.contributedNormalized(contributor), 4.5e18);
+/// @dev Verifies contribute() caps against the remaining GOAL, not just the
+/// per-address CAP_PER_ADDRESS. Regression test for the CTO review finding:
+/// totalRaisedNormalized must never exceed GOAL, even when a late contributor's
+/// full $6.9 allowance would overshoot the remaining goal.
+contract EverestOrBustGoalCapTest is Test {
+    EverestOrBust campaign;
+    MockERC20 usdc;
+    MockERC20 usdt;
+
+    address creator = makeAddr("creator");
+    address lastContributor = makeAddr("lastContributor");
+
+    uint256 constant START = 1765324800;
+    uint256 constant DEADLINE = START + 69 days;
+
+    function setUp() public {
+        usdc = new MockERC20();
+        usdt = new MockERC20();
+        usdc.setDecimals(6);
+        usdt.setDecimals(6);
+        campaign = new EverestOrBust(creator, address(usdc), address(usdt), START);
+        vm.warp(START);
+    }
+
+    /// @dev Fill the goal using 9,999 contributors of $6.9 each ($68,993.1 raised),
+    /// then one more contributor takes $4.9 of the remaining $6.9, leaving exactly
+    /// $2 remaining — less than the $6.9 per-address cap, forcing the next
+    /// contributor's clamp to be goal-driven rather than cap-driven.
+    function _fillGoalLeaving2Remaining() internal {
+        uint256 fullContributors = 9999;
+        for (uint256 i = 0; i < fullContributors; i++) {
+            address c = address(uint160(0x8000 + i));
+            usdc.mint(c, 6.9e6);
+            vm.startPrank(c);
+            usdc.approve(address(campaign), 6.9e6);
+            campaign.contribute(address(usdc), 6.9e6);
+            vm.stopPrank();
+        }
+        // $68,993.1 raised, $6.9 remains. Take $4.9 of it, leaving exactly $2.
+        address penultimate = address(uint160(0xB000));
+        usdc.mint(penultimate, 4.9e6);
+        vm.startPrank(penultimate);
+        usdc.approve(address(campaign), 4.9e6);
+        campaign.contribute(address(usdc), 4.9e6);
+        vm.stopPrank();
+    }
+
+    function test_Contribute_CapsAtRemainingGoal_NotJustPerAddressCap() public {
+        // fill goal until exactly $2 remains
+        _fillGoalLeaving2Remaining();
+        assertEq(campaign.remaining(), 2e18);
+
+        // lastContributor has a full $6.9 allowance available, but only $2 of goal remains
+        usdc.mint(lastContributor, 6.9e6);
+        vm.startPrank(lastContributor);
+        usdc.approve(address(campaign), 6.9e6);
+        campaign.contribute(address(usdc), 6.9e6);
+        vm.stopPrank();
+
+        // totalRaisedNormalized must land at EXACTLY $69,000, never more
+        assertEq(campaign.totalRaisedNormalized(), 69_000e18);
+        assertEq(campaign.remaining(), 0);
+
+        // lastContributor should only be credited $2, not the full $6.9 they sent
+        assertEq(campaign.contributedNormalized(lastContributor), 2e18);
+        assertEq(campaign.contributedUSDC(lastContributor), 2e6);
+
+        // the un-pulled $4.9 stays in lastContributor's wallet — the contract only
+        // pulled what it actually needed
+        assertEq(usdc.balanceOf(lastContributor), 6.9e6 - 2e6);
+    }
+
+    function test_Contribute_ExactGoalFill_ClosesCleanlyAtExactly69000() public {
+        uint256 needed = 10_000;
+        for (uint256 i = 0; i < needed; i++) {
+            address c = address(uint160(0xA000 + i));
+            usdc.mint(c, 6.9e6);
+            vm.startPrank(c);
+            usdc.approve(address(campaign), 6.9e6);
+            campaign.contribute(address(usdc), 6.9e6);
+            vm.stopPrank();
+        }
+        assertEq(campaign.totalRaisedNormalized(), 69_000e18);
+
+        // one more contributor attempting to contribute after goal is exactly met
+        address extra = makeAddr("extraContributor");
+        usdc.mint(extra, 6.9e6);
+        vm.startPrank(extra);
+        usdc.approve(address(campaign), 6.9e6);
+        vm.expectRevert(EverestOrBust.GoalReached.selector);
+        campaign.contribute(address(usdc), 6.9e6);
+        vm.stopPrank();
+    }
+}
+
+/// @dev Regression test for CTO review finding: constructor must reject a
+/// start timestamp already in the past.
+contract EverestOrBustStartTimeValidationTest is Test {
+    MockERC20 usdc;
+    MockERC20 usdt;
+
+    function setUp() public {
+        usdc = new MockERC20();
+        usdt = new MockERC20();
+        usdc.setDecimals(6);
+        usdt.setDecimals(6);
+    }
+
+    function test_RevertWhen_StartTimeInPast() public {
+        vm.warp(1_800_000_000);
+        vm.expectRevert(EverestOrBust.InvalidStartTime.selector);
+        new EverestOrBust(address(this), address(usdc), address(usdt), 1_700_000_000);
+    }
+
+    function test_Deploy_SucceedsWithStartTimeAtExactlyNow() public {
+        vm.warp(1_800_000_000);
+        EverestOrBust campaign =
+            new EverestOrBust(address(this), address(usdc), address(usdt), 1_800_000_000);
+        assertEq(campaign.start(), 1_800_000_000);
+    }
+
+    function test_Deploy_SucceedsWithFutureStartTime() public {
+        vm.warp(1_700_000_000);
+        EverestOrBust campaign =
+            new EverestOrBust(address(this), address(usdc), address(usdt), 1_800_000_000);
+        assertEq(campaign.start(), 1_800_000_000);
     }
 }
